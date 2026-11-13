@@ -12,7 +12,7 @@ export default function SessionView() {
 	const [query, setQuery] = useState('')
 	const [tab, setTab] = useState<TranscriptTab>('transcript')
 	const options = useTranscriptViewOptions()
-	const multiple = queue.jobs.length > 1
+	const multiple = queue.isBatch
 	const selected = queue.selectedJob
 
 	useEffect(() => {

@@ -335,7 +335,7 @@ export default function TranscriptToolbar({
 							exit={{ opacity: 0, y: -4 }}
 							transition={{ duration: 0.15, ease: 'easeOut' }}
 							className="flex w-full items-center gap-1">
-							{queue.jobs.length > 1 ? (
+							{queue.isBatch ? (
 								/* A batch: the same word, with everything that writes files behind it. */
 								<DropdownMenu>
 									<DropdownMenuTrigger asChild>
@@ -391,7 +391,8 @@ export default function TranscriptToolbar({
 							<ViewOptions options={options} />
 
 							<div className="ms-auto flex items-center gap-1">
-								{queue.running && (
+								{/* An opened Recent is not part of the run behind it, so it offers no cancel. */}
+								{queue.running && !(job?.hydrated && job.status === 'done') && (
 									<Button
 										variant="ghost"
 										size="sm"

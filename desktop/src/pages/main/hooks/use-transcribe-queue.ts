@@ -112,11 +112,12 @@ export interface TranscribeQueue {
 	/** Transcribe the media already attached to a hydrated project with no transcript. */
 	transcribeJob: (jobId: string) => void
 	/**
-	 * Replace the session with a transcript loaded from the store, shown as a finished job.
+	 * Show a transcript loaded from the store as a finished job. It replaces the session's finished
+	 * jobs; queued and running ones stay so a run in progress is not lost.
 	 * `audioPath` is the media copy kept in the project folder, when it still has one; it becomes the
 	 * job's path so the player keeps working after the original file moved away.
 	 */
-	hydrate: (record: TranscriptRecord, savedPath: string, audioPath?: string | null, source?: ProjectSource) => string | null
+	hydrate: (record: TranscriptRecord, savedPath: string, audioPath?: string | null, source?: ProjectSource) => string
 	/** Replace a job's lines after an inline edit or a speaker change. Persists to the saved file when it has one. */
 	setSegments: (jobId: string, segments: Segment[]) => void
 	/** Rename the visible project and its persisted record, when one exists. */
@@ -131,7 +132,10 @@ export interface TranscribeQueue {
 	setSpeakerName: (jobId: string, speaker: number, name: string) => void
 	cancelCurrent: () => void
 	cancelAll: () => void
-	reset: () => void
+	/** Leave the open transcript for an empty start; queued and running jobs keep going in the background. */
+	startNew: () => void
+	/** More than one transcribed file in this session: the file rail and "Export all" apply. */
+	isBatch: boolean
 	/** Progress across a run of several files, null for a single file or when idle. */
 	batch: BatchProgress | null
 	/** The finished card's content, until dismissed. */
@@ -143,7 +147,13 @@ export interface TranscribeQueue {
 	exportFinished: () => Promise<void>
 }
 
+/** Still waiting or transcribing: switching the view must never drop these. */
+function isInProgress(job: Job) {
+	return job.status === 'queued' || job.status === 'running'
+}
+
 let jobCounter = 0
+
 function nextJobId() {
 	jobCounter += 1
 	return `job-${jobCounter}`
@@ -618,18 +628,19 @@ export function useTranscribeQueue(): TranscribeQueue {
 				segments: [],
 			}))
 			commit([...jobsRef.current, ...created])
-			if (!selectedIdRef.current) select(created[0].id)
+			if (!selectedIdRef.current) {
+				// Started from the empty view: follow the run as a fresh session does.
+				pinnedRef.current = false
+				select(created[0].id)
+			}
 			void runLoop()
 		},
 		[commit, runLoop, select],
 	)
 
-	/** Load a saved transcript as the whole session: one finished job the done view can render. */
+	/** Open a saved transcript beside whatever is still in progress. */
 	const hydrate = useCallback(
 		(record: TranscriptRecord, savedPath: string, audioPath?: string | null, source?: ProjectSource) => {
-			// Opening an older Recent while a run is active remains disallowed. A recording finish is
-			// different: its durable project must enter the session even if another job is running.
-			if (runningRef.current && source !== 'record') return null
 			const id = nextJobId()
 			const job: Job = {
 				id,
@@ -647,7 +658,7 @@ export function useTranscribeQueue(): TranscribeQueue {
 				speakerNames: record.speakerNames,
 			}
 			pinnedRef.current = true
-			commit(runningRef.current ? [...jobsRef.current, job] : [job])
+			commit([...jobsRef.current.filter(isInProgress), job])
 			select(job.id)
 			return id
 		},
@@ -747,14 +758,16 @@ export function useTranscribeQueue(): TranscribeQueue {
 		commit(jobsRef.current.map((job) => (job.status === 'queued' ? { ...job, status: 'cancelled' } : job)))
 	}, [commit])
 
-	const reset = useCallback(() => {
-		if (runningRef.current) cancelAll()
-		pinnedRef.current = false
-		commit([])
+	const startNew = useCallback(() => {
+		const kept = jobsRef.current.filter(isInProgress)
+		// Keeps the run loop from pulling the empty view back to the next queued job.
+		pinnedRef.current = kept.length > 0
+		commit(kept)
 		select(null)
-	}, [cancelAll, commit, select])
+	}, [commit, select])
 
 	const selectedJob = jobs.find((job) => job.id === selectedId) ?? null
+	const isBatch = jobs.filter((job) => !job.hydrated).length > 1
 	const hasResults = jobs.some((job) => job.segments.length > 0)
 
 	return {
@@ -777,7 +790,8 @@ export function useTranscribeQueue(): TranscribeQueue {
 		setSpeakerName,
 		cancelCurrent,
 		cancelAll,
-		reset,
+		startNew,
+		isBatch,
 		batch,
 		batchSummary,
 		dismissBatchSummary,

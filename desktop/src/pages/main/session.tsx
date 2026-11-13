@@ -194,7 +194,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 			}
 			const jobId = hydrate(record, saved.recordPath, saved.mediaPath, 'record')
 			notifyTranscriptsChanged()
-			if (current.autoTranscribeAfterRecording && jobId) transcribeJob(jobId)
+			if (current.autoTranscribeAfterRecording) transcribeJob(jobId)
 		})
 		return () => {
 			unlisten.then((fn) => fn())
@@ -238,7 +238,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 	}, [enqueuePaths])
 
 	const startNew = useCallback(() => {
-		queue.reset()
+		queue.startNew()
 		setPanel('none')
 	}, [queue])
 
@@ -309,7 +309,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 	const hasUnsavedResults = queue.jobs.some((job) => job.status === 'done' && !job.hydrated && !job.savedPath)
 	useConfirmExit(preference.closeToTray, queue.running || hasUnsavedResults)
 
-	const mode: SessionMode = queue.jobs.length === 0 ? 'idle' : queue.running || queue.jobs.some((job) => job.status === 'queued') ? 'working' : 'done'
+	const mode: SessionMode = !queue.selectedJob ? 'idle' : queue.running || queue.jobs.some((job) => job.status === 'queued') ? 'working' : 'done'
 
 	const value = useMemo<Session>(
 		() => ({

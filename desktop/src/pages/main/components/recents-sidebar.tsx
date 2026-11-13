@@ -151,14 +151,12 @@ interface RowMenuState {
 function RecentRow({
 	entry,
 	active,
-	disabled,
 	onOpen,
 	onDeleted,
 	onRenamed,
 }: {
 	entry: TranscriptEntry
 	active: boolean
-	disabled: boolean
 	onOpen: () => void
 	onDeleted: () => void
 	onRenamed: () => void
@@ -247,9 +245,8 @@ function RecentRow({
 			<button
 				type="button"
 				onClick={onOpen}
-				disabled={disabled}
 				title={entry.name}
-				className="min-w-0 flex-1 cursor-pointer px-3 py-2 text-start disabled:cursor-default disabled:opacity-50">
+				className="min-w-0 flex-1 cursor-pointer px-3 py-2 text-start">
 				<p className="truncate text-[13px] font-medium text-foreground">{entry.name}</p>
 				<p className="mt-0.5 truncate text-[11px] text-muted-foreground">{relativeDate(entry.createdAt)}</p>
 			</button>
@@ -270,7 +267,7 @@ function RecentRow({
 					</button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="end" className="w-48">
-					<DropdownMenuItem disabled={disabled || !menu.sourceExists} onSelect={() => setRetranscribing(true)}>
+					<DropdownMenuItem disabled={!menu.sourceExists} onSelect={() => setRetranscribing(true)}>
 						{m.reTranscribe()}
 					</DropdownMenuItem>
 					<DropdownMenuItem
@@ -329,14 +326,12 @@ function RecentsList({
 	entries,
 	activePath,
 	activeName,
-	disabled,
 	onOpen,
 	onChanged,
 }: {
 	entries: TranscriptEntry[]
 	activePath: string | null
 	activeName: string | null
-	disabled: boolean
 	onOpen: (entry: TranscriptEntry) => void
 	onChanged: () => void
 }) {
@@ -368,7 +363,6 @@ function RecentsList({
 							<RecentRow
 								entry={active && activeName ? { ...entry, name: activeName } : entry}
 								active={active}
-								disabled={disabled}
 								onOpen={() => onOpen(entry)}
 								onDeleted={onChanged}
 								onRenamed={onChanged}
@@ -477,8 +471,6 @@ export default function RecentsSidebar() {
 					entries={filtered}
 					activePath={activePath}
 					activeName={queue.selectedJob?.name ?? null}
-					// Loading another transcript mid-run would fight the queue for the view.
-					disabled={queue.running}
 					onOpen={(entry) => void open(entry)}
 					onChanged={refresh}
 				/>

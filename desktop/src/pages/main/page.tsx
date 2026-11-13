@@ -89,7 +89,7 @@ function MainContent() {
 function useShowSidebar() {
 	const sidebarVisible = useSidebarVisible()
 	const { queue } = useSession()
-	const batch = queue.jobs.length > 1
+	const batch = queue.isBatch
 	const wasBatch = useRef(batch)
 	const visibleRef = useRef(sidebarVisible)
 	visibleRef.current = sidebarVisible
