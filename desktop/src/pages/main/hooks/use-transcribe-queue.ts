@@ -236,6 +236,8 @@ export function useTranscribeQueue(): TranscribeQueue {
 	const abortCurrentRef = useRef(false)
 	const abortAllRef = useRef(false)
 	const projectOperationsRef = useRef(new Map<string, Promise<unknown>>())
+	/** Files of finished jobs that left the session, so a summary or answer still in flight lands in them. */
+	const droppedPathsRef = useRef(new Map<string, string | undefined>())
 
 	useEffect(() => {
 		preferenceRef.current = preference
@@ -248,10 +250,18 @@ export function useTranscribeQueue(): TranscribeQueue {
 
 	const patch = useCallback(
 		(id: string, changes: Partial<Job>) => {
+			// Saving and renaming finish on their own schedule, also for a job that already left the session.
+			if (changes.savedPath && droppedPathsRef.current.has(id)) droppedPathsRef.current.set(id, changes.savedPath)
 			commit(jobsRef.current.map((job) => (job.id === id ? { ...job, ...changes } : job)))
 		},
 		[commit],
 	)
+
+	/** The jobs still in progress; the finished ones leave the session but keep their file reachable. */
+	const keepInProgress = useCallback(() => {
+		for (const job of jobsRef.current) if (!isInProgress(job)) droppedPathsRef.current.set(job.id, job.savedPath)
+		return jobsRef.current.filter(isInProgress)
+	}, [])
 
 	const select = useCallback((id: string | null) => {
 		selectedIdRef.current = id
@@ -658,11 +668,11 @@ export function useTranscribeQueue(): TranscribeQueue {
 				speakerNames: record.speakerNames,
 			}
 			pinnedRef.current = true
-			commit([...jobsRef.current.filter(isInProgress), job])
+			commit([...keepInProgress(), job])
 			select(job.id)
 			return id
 		},
-		[commit, select],
+		[commit, keepInProgress, select],
 	)
 
 	/**
@@ -711,7 +721,12 @@ export function useTranscribeQueue(): TranscribeQueue {
 	const setJobSummary = useCallback(
 		(jobId: string, summary: string) => {
 			const job = jobsRef.current.find((candidate) => candidate.id === jobId)
-			if (!job || job.summary === summary) return
+			if (!job) {
+				const savedPath = droppedPathsRef.current.get(jobId)
+				if (savedPath) void updateTranscriptSummary(savedPath, summary)
+				return
+			}
+			if (job.summary === summary) return
 			commit(jobsRef.current.map((candidate) => (candidate.id === jobId ? { ...candidate, summary } : candidate)))
 			if (job.savedPath) void updateTranscriptSummary(job.savedPath, summary)
 		},
@@ -721,7 +736,11 @@ export function useTranscribeQueue(): TranscribeQueue {
 	const setJobThread = useCallback(
 		(jobId: string, thread: AiThreadEntry[]) => {
 			const job = jobsRef.current.find((candidate) => candidate.id === jobId)
-			if (!job) return
+			if (!job) {
+				const savedPath = droppedPathsRef.current.get(jobId)
+				if (savedPath) void updateTranscriptThread(savedPath, thread)
+				return
+			}
 			commit(jobsRef.current.map((candidate) => (candidate.id === jobId ? { ...candidate, thread } : candidate)))
 			if (job.savedPath) void updateTranscriptThread(job.savedPath, thread)
 		},
@@ -759,12 +778,12 @@ export function useTranscribeQueue(): TranscribeQueue {
 	}, [commit])
 
 	const startNew = useCallback(() => {
-		const kept = jobsRef.current.filter(isInProgress)
+		const kept = keepInProgress()
 		// Keeps the run loop from pulling the empty view back to the next queued job.
 		pinnedRef.current = kept.length > 0
 		commit(kept)
 		select(null)
-	}, [commit, select])
+	}, [commit, keepInProgress, select])
 
 	const selectedJob = jobs.find((job) => job.id === selectedId) ?? null
 	const isBatch = jobs.filter((job) => !job.hydrated).length > 1
